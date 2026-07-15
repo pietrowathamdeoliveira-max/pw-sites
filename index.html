@@ -799,27 +799,30 @@
                         </div>
 
                         <div class="glass p-8 rounded-3xl gsap-reveal border border-white/10 relative">
-                            <form id="contactForm" onsubmit="handleFormSubmit(event)" class="space-y-6">
+                            <form id="contactForm" onsubmit="handleFormSubmit(event)" class="space-y-6" novalidate>
+                                <!-- Honeypot anti-spam (Web3Forms) - must stay invisible to humans -->
+                                <input type="checkbox" name="botcheck" class="hidden" style="display: none;" tabindex="-1" autocomplete="off">
+
                                 <div class="space-y-2">
                                     <label class="text-sm text-slate-300 font-medium">Nome Completo</label>
-                                    <input type="text" required class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-400 transition-colors interactive">
+                                    <input type="text" name="name" id="field-name" required class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-400 transition-colors interactive">
                                 </div>
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div class="space-y-2">
                                         <label class="text-sm text-slate-300 font-medium">E-mail Profissional</label>
-                                        <input type="email" required class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-400 transition-colors interactive">
+                                        <input type="email" name="email" id="field-email" required class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-400 transition-colors interactive">
                                     </div>
                                     <div class="space-y-2">
                                         <label class="text-sm text-slate-300 font-medium">WhatsApp</label>
-                                        <input type="text" required class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-400 transition-colors interactive">
+                                        <input type="text" name="phone" id="field-phone" required class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-400 transition-colors interactive">
                                     </div>
                                 </div>
                                 <div class="space-y-2">
                                     <label class="text-sm text-slate-300 font-medium">Detalhes do Projeto</label>
-                                    <textarea rows="4" required class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-400 transition-colors resize-none interactive"></textarea>
+                                    <textarea rows="4" name="message" id="field-message" required class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-400 transition-colors resize-none interactive"></textarea>
                                 </div>
-                                <button type="submit" class="w-full btn-premium btn-glow bg-blue-600 text-white px-8 py-4 rounded-xl font-semibold text-lg hover:bg-blue-700 interactive flex justify-center items-center gap-2 transition-all">
-                                    <span>Solicitar Orçamento</span> <i class="ph ph-paper-plane-right"></i>
+                                <button type="submit" id="formSubmitBtn" class="w-full btn-premium btn-glow bg-blue-600 text-white px-8 py-4 rounded-xl font-semibold text-lg hover:bg-blue-700 interactive flex justify-center items-center gap-2 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
+                                    <span id="formSubmitBtnText">Solicitar Orçamento</span> <i class="ph ph-paper-plane-right" id="formSubmitBtnIcon"></i>
                                 </button>
                             </form>
                             
@@ -1325,32 +1328,40 @@
             { icon: 'ph-star text-yellow-400', text: 'Nova avaliação 5 estrelas recebida.' }
         ];
 
-        function showNotification() {
+        // Generic toast creator - used by the random notification system
+        // and by form validation/submission feedback (kept as a single
+        // implementation to avoid duplicated toast-building code).
+        function createToast(icon, text, duration = 4000) {
             const toastContainer = document.getElementById('toast-container');
-            const randomNotif = notifications[Math.floor(Math.random() * notifications.length)];
-            
+            if (!toastContainer) return;
+
             const toast = document.createElement('div');
             toast.className = 'toast';
             toast.innerHTML = `
-                <i class="ph ${randomNotif.icon} text-2xl text-slate-300"></i>
-                <p class="text-sm text-white font-medium pr-4">${randomNotif.text}</p>
+                <i class="ph ${icon} text-2xl text-slate-300"></i>
+                <p class="text-sm text-white font-medium pr-4">${text}</p>
                 <div class="toast-progress"></div>
             `;
-            
+
             toastContainer.appendChild(toast);
-            
+
             // Animate in
             setTimeout(() => toast.classList.add('show'), 100);
-            
+
             // Progress Bar animation
             const progress = toast.querySelector('.toast-progress');
-            gsap.to(progress, { width: '0%', duration: 4, ease: 'linear' });
+            gsap.to(progress, { width: '0%', duration: duration / 1000, ease: 'linear' });
 
             // Remove
             setTimeout(() => {
                 toast.classList.remove('show');
                 setTimeout(() => toast.remove(), 500);
-            }, 4000);
+            }, duration);
+        }
+
+        function showNotification() {
+            const randomNotif = notifications[Math.floor(Math.random() * notifications.length)];
+            createToast(randomNotif.icon, randomNotif.text);
         }
 
         // Trigger notifications randomly every 12 to 25 seconds
@@ -1361,26 +1372,115 @@
         }, Math.floor(Math.random() * 13000) + 12000);
 
 
-        // Form Handling
-        function handleFormSubmit(e) {
-            e.preventDefault();
-            const btn = e.target.querySelector('button[type="submit"]');
-            const originalText = btn.innerHTML;
-            
-            btn.innerHTML = '<i class="ph ph-spinner animate-spin"></i> Enviando...';
-            btn.disabled = true;
+        // ---------------------------------------------------------------
+        // Contact Form — real submission via Web3Forms (no backend needed)
+        // ---------------------------------------------------------------
+        const WEB3FORMS_ACCESS_KEY = '0c7f224d-792e-425d-a3ef-830917be21f4';
+        const WEB3FORMS_ENDPOINT = 'https://api.web3forms.com/submit';
 
-            // Simulate API call
-            setTimeout(() => {
-                document.getElementById('formSuccess').classList.remove('opacity-0', 'pointer-events-none');
-                btn.innerHTML = originalText;
+        function validateContactForm(form) {
+            const name = form.querySelector('#field-name');
+            const email = form.querySelector('#field-email');
+            const phone = form.querySelector('#field-phone');
+            const message = form.querySelector('#field-message');
+
+            // Guard against a changed/missing DOM structure instead of throwing.
+            if (!name || !email || !phone || !message) {
+                return { valid: false, message: 'Não foi possível localizar os campos do formulário.' };
+            }
+
+            const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+            if (!name.value.trim()) {
+                return { valid: false, message: 'Por favor, informe seu nome completo.' };
+            }
+            if (!email.value.trim() || !emailPattern.test(email.value.trim())) {
+                return { valid: false, message: 'Por favor, informe um e-mail válido.' };
+            }
+            if (!phone.value.trim()) {
+                return { valid: false, message: 'Por favor, informe seu WhatsApp.' };
+            }
+            if (!message.value.trim()) {
+                return { valid: false, message: 'Por favor, descreva os detalhes do projeto.' };
+            }
+
+            return { valid: true };
+        }
+
+        function setSubmitButtonLoading(isLoading) {
+            const btn = document.getElementById('formSubmitBtn');
+            const btnText = document.getElementById('formSubmitBtnText');
+            const btnIcon = document.getElementById('formSubmitBtnIcon');
+            if (!btn || !btnText || !btnIcon) return;
+
+            if (isLoading) {
+                btn.dataset.originalIcon = btnIcon.className;
+                btn.disabled = true;
+                btnText.textContent = 'Enviando...';
+                btnIcon.className = 'ph ph-spinner animate-spin';
+            } else {
                 btn.disabled = false;
-                e.target.reset();
-            }, 1500);
+                btnText.textContent = 'Solicitar Orçamento';
+                btnIcon.className = btn.dataset.originalIcon || 'ph ph-paper-plane-right';
+            }
+        }
+
+        async function handleFormSubmit(e) {
+            e.preventDefault();
+            const form = e.target;
+
+            // 1) Client-side validation (no empty/invalid fields allowed)
+            const validation = validateContactForm(form);
+            if (!validation.valid) {
+                createToast('ph-warning-circle text-red-400', validation.message);
+                return;
+            }
+
+            // 2) Honeypot check (Web3Forms spam protection)
+            const honeypot = form.querySelector('input[name="botcheck"]');
+            if (honeypot && honeypot.checked) {
+                // Silently drop likely-bot submissions without alerting the "user".
+                return;
+            }
+
+            setSubmitButtonLoading(true);
+
+            try {
+                const formData = new FormData(form);
+                formData.append('access_key', WEB3FORMS_ACCESS_KEY);
+                formData.append('subject', 'Novo orçamento - PW Sites');
+                formData.append('from_name', 'PW Sites');
+
+                const response = await fetch(WEB3FORMS_ENDPOINT, {
+                    method: 'POST',
+                    headers: { Accept: 'application/json' },
+                    body: formData
+                });
+
+                const result = await response.json().catch(() => null);
+
+                if (response.ok && result && result.success) {
+                    const formSuccess = document.getElementById('formSuccess');
+                    if (formSuccess) {
+                        formSuccess.classList.remove('opacity-0', 'pointer-events-none');
+                    }
+                    form.reset();
+                } else {
+                    const errorMessage = (result && result.message) || 'Não foi possível enviar sua solicitação.';
+                    createToast('ph-warning-circle text-red-400', `${errorMessage} Verifique sua conexão e tente novamente.`);
+                }
+            } catch (err) {
+                createToast('ph-warning-circle text-red-400', 'Não foi possível enviar sua solicitação. Verifique sua conexão e tente novamente.');
+            } finally {
+                setSubmitButtonLoading(false);
+            }
         }
 
         function resetForm() {
-            document.getElementById('formSuccess').classList.add('opacity-0', 'pointer-events-none');
+            const formSuccess = document.getElementById('formSuccess');
+            if (formSuccess) {
+                formSuccess.classList.add('opacity-0', 'pointer-events-none');
+            }
         }
 
         // WhatsApp Simulate
